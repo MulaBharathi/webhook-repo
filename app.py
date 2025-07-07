@@ -3,7 +3,7 @@ from pymongo import MongoClient
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-
+import traceback
 load_dotenv()
 
 app = Flask(__name__)
