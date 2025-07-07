@@ -16,6 +16,10 @@ collection = db[os.getenv("MONGO_COLLECTION")]
 @app.route('/')
 def index():
     latest = collection.find_one(sort=[("timestamp", -1)])
+    
+    if latest and isinstance(latest["timestamp"], str):
+        latest["timestamp"] = datetime.strptime(latest["timestamp"], "%Y-%m-%dT%H:%M:%SZ")
+
     return render_template("index.html", data=latest)
 
 @app.route('/webhook', methods=['POST'])
