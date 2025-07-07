@@ -29,10 +29,16 @@ def webhook():
 
     # Push event
     if 'pusher' in payload:
-        action_type = "push"
-        author = payload['pusher']['name']
-        to_branch = payload['ref'].split('/')[-1]
+    action_type = "push"
+    author = payload['pusher'].get('name', 'unknown')
+    to_branch = payload.get('ref', '').split('/')[-1]
+    head_commit = payload.get('head_commit')
+
+    if head_commit and 'timestamp' in head_commit:
         timestamp = datetime.strptime(head_commit['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
+    else:
+        timestamp = datetime.utcnow()  # fallback timestamp
+
 
     # Pull Request event
     elif payload.get("action") == "opened" and "pull_request" in payload:
