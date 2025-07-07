@@ -27,49 +27,53 @@ def webhook():
     to_branch = None
     timestamp = datetime.utcnow()
 
-    # Push event
-    if 'pusher' in payload:
-    action_type = "push"
-    author = payload['pusher'].get('name', 'unknown')
-    to_branch = payload.get('ref', '').split('/')[-1]
-    head_commit = payload.get('head_commit')
+    try:
+        # Push event
+        if 'pusher' in payload:
+            action_type = "push"
+            author = payload['pusher'].get('name', 'unknown')
+            to_branch = payload.get('ref', '').split('/')[-1]
+            head_commit = payload.get('head_commit')
+            if head_commit and 'timestamp' in head_commit:
+                timestamp = datetime.strptime(head_commit['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
+            else:
+                timestamp = datetime.utcnow()  # fallback
 
-    if head_commit and 'timestamp' in head_commit:
-        timestamp = datetime.strptime(head_commit['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
-    else:
-        timestamp = datetime.utcnow()  # fallback timestamp
+        # Pull Request opened
+        elif payload.get("action") == "opened" and "pull_request" in payload:
+            action_type = "pull_request"
+            pr = payload["pull_request"]
+            author = pr["user"]["login"]
+            from_branch = pr["head"]["ref"]
+            to_branch = pr["base"]["ref"]
+            timestamp = datetime.strptime(pr["created_at"], "%Y-%m-%dT%H:%M:%SZ")
 
+        # Pull Request merged
+        elif payload.get("action") == "closed" and payload.get("pull_request", {}).get("merged"):
+            action_type = "merge"
+            pr = payload["pull_request"]
+            author = pr["user"]["login"]
+            from_branch = pr["head"]["ref"]
+            to_branch = pr["base"]["ref"]
+            timestamp = datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ")
 
-    # Pull Request event
-    elif payload.get("action") == "opened" and "pull_request" in payload:
-        action_type = "pull_request"
-        pr = payload["pull_request"]
-        author = pr["user"]["login"]
-        from_branch = pr["head"]["ref"]
-        to_branch = pr["base"]["ref"]
-        timestamp = datetime.strptime(pr["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+        if action_type:
+            doc = {
+                "action": action_type,
+                "author": author,
+                "from_branch": from_branch,
+                "to_branch": to_branch,
+                "timestamp": timestamp
+            }
+            print(f"[INFO] Storing document: {doc}")  # Log for debugging
+            collection.insert_one(doc)
+            return {"message": "Event stored"}, 200
 
-    # Merge event (pull_request closed with merged = true)
-    elif payload.get("action") == "closed" and payload.get("pull_request", {}).get("merged"):
-        action_type = "merge"
-        pr = payload["pull_request"]
-        author = pr["user"]["login"]
-        from_branch = pr["head"]["ref"]
-        to_branch = pr["base"]["ref"]
-        timestamp = datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ")
+        return {"message": "Unhandled event"}, 400
 
-    if action_type:
-        doc = {
-            "action": action_type,
-            "author": author,
-            "from_branch": from_branch,
-            "to_branch": to_branch,
-            "timestamp": timestamp
-        }
-        collection.insert_one(doc)
-        return {"message": "Event stored"}, 200
-
-    return {"message": "Unhandled event"}, 400
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return {"message": "Server error", "error": str(e)}, 500
 
 if __name__ == '__main__':
     app.run(debug=True)
