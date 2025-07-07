@@ -1,27 +1,36 @@
-<!-- index.html content -->
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Webhook Event</title>
-  <meta http-equiv="refresh" content="15" />
+  <title>Latest Webhook Event</title>
+  <script>
+    function formatTime(timestamp) {
+      const date = new Date(timestamp);
+      return date.toUTCString(); // Outputs: "Mon, 07 Jul 2025 03:09:52 GMT"
+    }
+
+    function fetchEvent() {
+      fetch('/webhook-data')
+        .then(res => res.json())
+        .then(data => {
+          let output = "No data received yet.";
+          if (data.action === "push") {
+            output = `"${data.author}" pushed to "${data.to_branch}" on ${formatTime(data.timestamp)}`;
+          } else if (data.action === "pull_request") {
+            output = `"${data.author}" submitted a pull request from "${data.from_branch}" to "${data.to_branch}" on ${formatTime(data.timestamp)}`;
+          } else if (data.action === "merge") {
+            output = `"${data.author}" merged branch "${data.from_branch}" to "${data.to_branch}" on ${formatTime(data.timestamp)}`;
+          }
+          document.getElementById("event").innerText = output;
+        });
+    }
+
+    setInterval(fetchEvent, 15000);
+    window.onload = fetchEvent;
+  </script>
 </head>
 <body>
   <h1>Latest Webhook Event</h1>
-  {% if data %}
-    <p>
-      {% if data.action == 'push' %}
-        {{ data.author }} pushed to {{ data.to_branch }} on {{ data.timestamp }}
-      {% elif data.action == 'pull_request' %}
-        {{ data.author }} submitted a pull request from {{ data.from_branch }} to {{ data.to_branch }} on {{ data.timestamp }}
-      {% elif data.action == 'merge' %}
-        {{ data.author }} merged branch {{ data.from_branch }} to {{ data.to_branch }} on {{ data.timestamp }}
-      {% else %}
-        Unknown action
-      {% endif %}
-    </p>
-  {% else %}
-    <p>No data received yet.</p>
-  {% endif %}
+  <p id="event">Loading...</p>
 </body>
 </html>
 
