@@ -32,7 +32,7 @@ def webhook():
         action_type = "push"
         author = payload['pusher']['name']
         to_branch = payload['ref'].split('/')[-1]
-        timestamp = datetime.strptime(payload(head_commit['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
+        timestamp = datetime.strptime(head_commit['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
 
     # Pull Request event
     elif payload.get("action") == "opened" and "pull_request" in payload:
