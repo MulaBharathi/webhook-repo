@@ -35,7 +35,7 @@ def webhook():
             to_branch = payload.get('ref', '').split('/')[-1]
             head_commit = payload.get('head_commit')
             if head_commit and 'timestamp' in head_commit:
-                timestamp = datetime.strptime(head_commit['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
+                timestamp = datetime.strptime(payload['head_commit']['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
             else:
                 timestamp = datetime.utcnow()  # fallback
 
