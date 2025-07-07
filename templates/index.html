@@ -1,36 +1,44 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Latest Webhook Event</title>
-  <script>
-    function formatTime(timestamp) {
-      const date = new Date(timestamp);
-      return date.toUTCString(); // Outputs: "Mon, 07 Jul 2025 03:09:52 GMT"
+  <title>Webhook Event</title>
+  <meta http-equiv="refresh" content="15" />
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f4f4f4;
+      padding: 2em;
+      max-width: 600px;
+      margin: auto;
     }
-
-    function fetchEvent() {
-      fetch('/webhook-data')
-        .then(res => res.json())
-        .then(data => {
-          let output = "No data received yet.";
-          if (data.action === "push") {
-            output = `"${data.author}" pushed to "${data.to_branch}" on ${formatTime(data.timestamp)}`;
-          } else if (data.action === "pull_request") {
-            output = `"${data.author}" submitted a pull request from "${data.from_branch}" to "${data.to_branch}" on ${formatTime(data.timestamp)}`;
-          } else if (data.action === "merge") {
-            output = `"${data.author}" merged branch "${data.from_branch}" to "${data.to_branch}" on ${formatTime(data.timestamp)}`;
-          }
-          document.getElementById("event").innerText = output;
-        });
+    .card {
+      background: white;
+      padding: 1.5em;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
-
-    setInterval(fetchEvent, 15000);
-    window.onload = fetchEvent;
-  </script>
+    .time {
+      color: gray;
+      font-size: 0.9em;
+    }
+  </style>
 </head>
 <body>
-  <h1>Latest Webhook Event</h1>
-  <p id="event">Loading...</p>
+  <div class="card">
+    <h2>Latest Webhook Event</h2>
+    {% if data %}
+      {% if data.action == 'push' %}
+        <p><strong>{{ data.author }}</strong> pushed to <strong>{{ data.to_branch }}</strong></p>
+      {% elif data.action == 'pull_request' %}
+        <p><strong>{{ data.author }}</strong> submitted a pull request from <strong>{{ data.from_branch }}</strong> to <strong>{{ data.to_branch }}</strong></p>
+      {% elif data.action == 'merge' %}
+        <p><strong>{{ data.author }}</strong> merged branch <strong>{{ data.from_branch }}</strong> to <strong>{{ data.to_branch }}</strong></p>
+      {% endif %}
+      <p class="time">on {{ data.timestamp.strftime('%-d %B %Y - %-I:%M %p UTC') }}</p>
+    {% else %}
+      <p>No data received yet.</p>
+    {% endif %}
+  </div>
 </body>
 </html>
 
