@@ -1,6 +1,6 @@
 from flask import Flask, request, render_template
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import timezone, timezone
 import os
 from dotenv import load_dotenv
 import traceback
@@ -32,7 +32,7 @@ def index():
             try:
                 latest["timestamp"] = datetime.fromisoformat(latest["timestamp"])
             except:
-                latest["timestamp"] = datetime.utcnow()
+                latest["timestamp"] = datetime.now(timezone.utc)
 
     return render_template("index.html", data=latest)
 
@@ -42,11 +42,15 @@ def webhook():
         payload = request.get_json(force=True)
         print("[DEBUG] Payload received:", payload)
 
+        if 'zen' in payload:
+            print("[INFO] Ping event received.")
+            return {"message": "Ping received"}, 200
+
         action_type = None
         author = None
         from_branch = None
         to_branch = None
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(timezone.utc)
 
         # Push event
         if 'pusher' in payload:
