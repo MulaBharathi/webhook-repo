@@ -5,7 +5,7 @@ import datetime
 app = Flask(__name__)
 
 # Connect to MongoDB Atlas or local MongoDBi
-client = MongoClient("mongodb+srv://dbuser:<Bharu%40446>@cluster0.gt4fbl2.mongodb.net/")  # 🔁 Replace with your actual URI
+client = MongoClient("mongodb+srv://dbuser:Bharu%40446@cluster0.gt4fbl2.mongodb.net/webhook?retryWrites=true&w=majority")  # 🔁 Replace with your actual URI
 db = client["webhooks"]
 collection = db["events"]
 

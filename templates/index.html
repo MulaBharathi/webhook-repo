@@ -1,11 +1,27 @@
+<!-- index.html content -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Webhook Dashboard</title>
+  <title>Webhook Event</title>
+  <meta http-equiv="refresh" content="15" />
 </head>
 <body>
-    <h1>Latest Webhook Data</h1>
-    <pre>{{ data | tojson(indent=2) }}</pre>
+  <h1>Latest Webhook Event</h1>
+  {% if data %}
+    <p>
+      {% if data.action == 'push' %}
+        {{ data.author }} pushed to {{ data.to_branch }} on {{ data.timestamp }}
+      {% elif data.action == 'pull_request' %}
+        {{ data.author }} submitted a pull request from {{ data.from_branch }} to {{ data.to_branch }} on {{ data.timestamp }}
+      {% elif data.action == 'merge' %}
+        {{ data.author }} merged branch {{ data.from_branch }} to {{ data.to_branch }} on {{ data.timestamp }}
+      {% else %}
+        Unknown action
+      {% endif %}
+    </p>
+  {% else %}
+    <p>No data received yet.</p>
+  {% endif %}
 </body>
 </html>
 
