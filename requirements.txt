@@ -1,2 +1,3 @@
-Flask==2.3.3
-
+Flask==2.3.2
+pymango==4.6.1
+python-dotenv==1.0.1
