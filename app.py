@@ -5,12 +5,12 @@ import os
 from dotenv import load_dotenv
 import traceback
 
-# Load env variables
+# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 
-# MongoDB connection
+# MongoDB setup
 mongo_uri = os.getenv("MONGO_URI")
 mongo_db = os.getenv("MONGO_DB")
 mongo_collection = os.getenv("MONGO_COLLECTION")
@@ -22,7 +22,7 @@ collection = db[mongo_collection]
 @app.route('/')
 def index():
     latest = collection.find_one(sort=[("timestamp", -1)])
-
+    
     if latest and isinstance(latest.get("timestamp"), str):
         try:
             latest["timestamp"] = datetime.strptime(latest["timestamp"], "%Y-%m-%dT%H:%M:%SZ")
@@ -40,34 +40,37 @@ def webhook():
         if 'zen' in payload:
             return {"message": "Ping received"}, 200
 
+        event_type = request.headers.get("X-GitHub-Event")
+        print("[DEBUG] GitHub Event Type:", event_type)
+
         action_type = None
         author = None
         from_branch = None
         to_branch = None
         timestamp = datetime.now(timezone.utc)
 
-        if 'pusher' in payload:
+        if event_type == "push":
             action_type = "push"
             author = payload['pusher'].get('name', 'unknown')
             to_branch = payload.get('ref', '').split('/')[-1]
             if 'head_commit' in payload and payload['head_commit']:
                 timestamp = datetime.strptime(payload['head_commit']['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
 
-        elif payload.get("action") == "opened" and "pull_request" in payload:
-            action_type = "pull_request"
-            pr = payload["pull_request"]
-            author = pr["user"]["login"]
-            from_branch = pr["head"]["ref"]
-            to_branch = pr["base"]["ref"]
-            timestamp = datetime.strptime(pr["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+        elif event_type == "pull_request":
+            pr = payload.get("pull_request", {})
+            pr_action = payload.get("action", "")
+            author = pr.get("user", {}).get("login", "unknown")
+            from_branch = pr.get("head", {}).get("ref")
+            to_branch = pr.get("base", {}).get("ref")
 
-        elif payload.get("action") == "closed" and payload.get("pull_request", {}).get("merged"):
-            action_type = "merge"
-            pr = payload["pull_request"]
-            author = pr["user"]["login"]
-            from_branch = pr["head"]["ref"]
-            to_branch = pr["base"]["ref"]
-            timestamp = datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ")
+            if pr_action == "opened":
+                action_type = "pull_request"
+                timestamp = datetime.strptime(pr["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+            elif pr_action == "closed" and pr.get("merged"):
+                action_type = "merge"
+                timestamp = datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ")
+            else:
+                return {"message": "Ignored PR event"}, 200
 
         if action_type:
             doc = {
@@ -78,6 +81,7 @@ def webhook():
                 "timestamp": timestamp
             }
             collection.insert_one(doc)
+            print("[DEBUG] Stored in DB:", doc)
             return {"message": "Event stored"}, 200
 
         return {"message": "Unhandled event"}, 400
@@ -88,5 +92,4 @@ def webhook():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
 
