@@ -1,13 +1,13 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request
 from pymongo import MongoClient
 from datetime import datetime
-from dotenv import load_dotenv
 import os
-import traceback
+from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
+# Flask app setup
 app = Flask(__name__)
 
 # MongoDB setup
@@ -18,106 +18,91 @@ mongo_collection = os.getenv("MONGO_COLLECTION")
 client = MongoClient(mongo_uri)
 db = client[mongo_db]
 collection = db[mongo_collection]
+print("✅ Connected to MongoDB")
 
-# UI route to display latest event
-@app.route("/")
-def index():
-    latest = collection.find_one(sort=[("timestamp", -1)])
-    return render_template("index.html", data=latest)
-
-# Webhook endpoint
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        print("\n===== WEBHOOK RECEIVED =====")
-        print("Headers:", dict(request.headers))
-        print("Raw JSON:", request.data.decode("utf-8"))
-
-        if not request.is_json:
-            return jsonify({"error": "Invalid JSON"}), 400
-
         payload = request.get_json()
-        event_type = request.headers.get("X-GitHub-Event")
-        print("GitHub Event Type:", event_type)
+        event_type = request.headers.get("X-GitHub-Event", "unknown")
+        print(f"📥 Event received: {event_type}")
 
-        data = None
+        result = {}
 
-        # Handle PUSH
         if event_type == "push":
-            pusher = payload.get("pusher", {}).get("name", "unknown")
-            branch = payload.get("ref", "").split("/")[-1]
-            head_commit = payload.get("head_commit", {})
-            timestamp_str = head_commit.get("timestamp")
+            author = payload.get("pusher", {}).get("name", "unknown")
+            to_branch = payload.get("ref", "").split("/")[-1]
+            timestamp = payload.get("head_commit", {}).get("timestamp")
 
-            if not timestamp_str:
-                print("⚠️ Missing or empty timestamp in push, skipping")
-                return jsonify({"message": "Ignored push with no timestamp"}), 200
+            # Format timestamp to readable
+            formatted_time = format_timestamp(timestamp)
 
-            try:
-                timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
-            except ValueError:
-                print("❌ Invalid timestamp format:", timestamp_str)
-                return jsonify({"message": "Invalid timestamp format"}), 200
-
-            data = {
-                "action": "push",
-                "author": pusher,
-                "to_branch": branch,
-                "timestamp": timestamp
+            result = {
+                "type": "push",
+                "author": author,
+                "to_branch": to_branch,
+                "timestamp": formatted_time,
+                "message": f"{author} pushed to {to_branch} on {formatted_time}"
             }
 
-        # Handle Pull Request
         elif event_type == "pull_request":
-            pr = payload.get("pull_request", {})
-            action_type = payload.get("action")
+            action = payload.get("action")
+            if action == "opened":  # You can add more if needed
+                author = payload.get("pull_request", {}).get("user", {}).get("login", "unknown")
+                from_branch = payload.get("pull_request", {}).get("head", {}).get("ref", "")
+                to_branch = payload.get("pull_request", {}).get("base", {}).get("ref", "")
+                timestamp = payload.get("pull_request", {}).get("created_at", "")
 
-            if action_type == "opened":
-                timestamp_str = pr.get("created_at")
-                if not timestamp_str:
-                    print("⚠️ Missing created_at in PR")
-                    return jsonify({"message": "Missing created_at"}), 200
+                formatted_time = format_timestamp(timestamp)
 
-                timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
-
-                data = {
-                    "action": "pull_request",
-                    "author": pr.get("user", {}).get("login", "unknown"),
-                    "from_branch": pr.get("head", {}).get("ref", "unknown"),
-                    "to_branch": pr.get("base", {}).get("ref", "unknown"),
-                    "timestamp": timestamp
+                result = {
+                    "type": "pull_request",
+                    "author": author,
+                    "from_branch": from_branch,
+                    "to_branch": to_branch,
+                    "timestamp": formatted_time,
+                    "message": f"{author} submitted a pull request from {from_branch} to {to_branch} on {formatted_time}"
                 }
 
-            elif action_type == "closed" and pr.get("merged"):
-                timestamp_str = pr.get("merged_at")
-                if not timestamp_str:
-                    print("⚠️ Missing merged_at in PR")
-                    return jsonify({"message": "Missing merged_at"}), 200
+        elif event_type == "pull_request" and payload.get("action") == "closed" and payload.get("pull_request", {}).get("merged"):
+            author = payload.get("pull_request", {}).get("user", {}).get("login", "unknown")
+            from_branch = payload.get("pull_request", {}).get("head", {}).get("ref", "")
+            to_branch = payload.get("pull_request", {}).get("base", {}).get("ref", "")
+            timestamp = payload.get("pull_request", {}).get("merged_at", "")
 
-                timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
+            formatted_time = format_timestamp(timestamp)
 
-                data = {
-                    "action": "merge",
-                    "author": pr.get("user", {}).get("login", "unknown"),
-                    "from_branch": pr.get("head", {}).get("ref", "unknown"),
-                    "to_branch": pr.get("base", {}).get("ref", "unknown"),
-                    "timestamp": timestamp
-                }
+            result = {
+                "type": "merge",
+                "author": author,
+                "from_branch": from_branch,
+                "to_branch": to_branch,
+                "timestamp": formatted_time,
+                "message": f"{author} merged branch {from_branch} to {to_branch} on {formatted_time}"
+            }
 
-        # Store valid data
-        if data:
-            collection.insert_one(data)
-            print("✅ Event stored in MongoDB:", data)
-            return jsonify({"message": f"{data['action']} event stored"}), 200
+        if result:
+            collection.insert_one(result)
+            print("✅ Stored in MongoDB:", result)
+            return "Stored", 200
         else:
-            print("ℹ️ No valid data to store")
-            return jsonify({"message": "Ignored event or missing fields"}), 200
+            print("⚠️ Unsupported or incomplete event")
+            return "No relevant action", 200
 
     except Exception as e:
-        print("🔥 INTERNAL ERROR:", str(e))
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        print("❌ Error in webhook:", e)
+        return "Server error", 500
 
-# Run Flask
+def format_timestamp(ts):
+    try:
+        dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+    except:
+        try:
+            dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ")
+        except:
+            dt = datetime.utcnow()
+    return dt.strftime("%-d %B %Y - %-I:%M %p UTC")
+
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(port=5000, debug=True)
 
