@@ -19,11 +19,13 @@ client = MongoClient(mongo_uri)
 db = client[mongo_db]
 collection = db[mongo_collection]
 
+
 def parse_timestamp(ts_str):
     try:
         return datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     except Exception:
         return datetime.now(timezone.utc)
+
 
 @app.route('/')
 def index():
@@ -32,10 +34,12 @@ def index():
         latest_event['timestamp'] = parse_timestamp(latest_event['timestamp'])
     return render_template('index.html', data=latest_event)
 
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        print("=== Incoming Webhook ===")
+        print("\n=== Incoming Webhook ===")
+        print("Headers:", dict(request.headers))
         raw_body = request.data.decode("utf-8")
         print("Raw body:", raw_body)
 
@@ -44,19 +48,25 @@ def webhook():
             print("[ERROR] Empty or invalid payload")
             return jsonify({"message": "Invalid JSON"}), 400
 
+        event_type = request.headers.get("X-GitHub-Event", "unknown")
+        print(f"GitHub Event Type: {event_type}")
+        print(f"Payload action: {payload.get('action')}")
+
         action = None
         author = None
         from_branch = None
         to_branch = None
         timestamp = datetime.now(timezone.utc)
 
-        if 'pusher' in payload and 'ref' in payload and 'head_commit' in payload:
+        # Handle push
+        if event_type == "push":
             action = "push"
             author = payload['pusher'].get('name', 'unknown')
             to_branch = payload['ref'].split('/')[-1]
             timestamp = parse_timestamp(payload['head_commit'].get('timestamp', ''))
 
-        elif payload.get("action") == "opened" and "pull_request" in payload:
+        # Handle pull request opened
+        elif event_type == "pull_request" and payload.get("action") == "opened":
             action = "pull_request"
             pr = payload["pull_request"]
             author = pr["user"].get("login", "unknown")
@@ -64,7 +74,8 @@ def webhook():
             to_branch = pr["base"].get("ref")
             timestamp = parse_timestamp(pr.get("created_at", ''))
 
-        elif payload.get("action") == "closed" and payload.get("pull_request", {}).get("merged"):
+        # Handle pull request merged
+        elif event_type == "pull_request" and payload.get("action") == "closed" and payload.get("pull_request", {}).get("merged"):
             action = "merge"
             pr = payload["pull_request"]
             author = pr["user"].get("login", "unknown")
@@ -73,8 +84,8 @@ def webhook():
             timestamp = parse_timestamp(pr.get("merged_at", ''))
 
         if not action:
-            print("[WARN] Unhandled event")
-            return jsonify({"message": "Unhandled event"}), 400
+            print("[WARN] Unhandled or irrelevant event.")
+            return jsonify({"message": "Event not handled"}), 400
 
         doc = {
             "action": action,
@@ -87,13 +98,13 @@ def webhook():
 
         collection.insert_one(doc)
         print(f"[INFO] Stored {action} event by {author}")
-        return jsonify({"message": "Event stored"}), 200
+        return jsonify({"message": f"{action} event stored"}), 200
 
     except Exception as e:
         print("[ERROR] Exception occurred:", e)
         traceback.print_exc()
         return jsonify({"message": "Server error"}), 500
 
+
 if __name__ == '__main__':
     app.run(debug=True)
-
