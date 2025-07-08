@@ -1,16 +1,15 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify, render_template
 from pymongo import MongoClient
 from datetime import datetime
-import os
-import traceback
 from dotenv import load_dotenv
+import os
 
-# Load env variables
+# Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
 
-# MongoDB connection
+# MongoDB configuration
 mongo_uri = os.getenv("MONGO_URI")
 mongo_db = os.getenv("MONGO_DB")
 mongo_collection = os.getenv("MONGO_COLLECTION")
@@ -18,96 +17,74 @@ mongo_collection = os.getenv("MONGO_COLLECTION")
 client = MongoClient(mongo_uri)
 db = client[mongo_db]
 collection = db[mongo_collection]
-print("✅ Connected to MongoDB")
 
-# Timestamp formatter
-def format_timestamp(ts):
-    try:
-        if ts:
-            try:
-                dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
-            except ValueError:
-                dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ")
-            return dt.strftime("%-d %B %Y - %-I:%M %p UTC")
-    except Exception:
-        pass
-    return datetime.utcnow().strftime("%-d %B %Y - %-I:%M %p UTC")
+# Route to show latest GitHub event on UI
+@app.route("/")
+def index():
+    latest = collection.find_one(sort=[("timestamp", -1)])
+    return render_template("index.html", data=latest)
 
+# GitHub webhook endpoint
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    if not request.is_json:
+        return jsonify({"error": "Invalid JSON"}), 400
+
+    payload = request.get_json()
+    event_type = request.headers.get("X-GitHub-Event")
+    print("\n===== WEBHOOK RECEIVED =====")
+    print("GitHub Event Type:", event_type)
+
     try:
-        payload = request.get_json()
-        event_type = request.headers.get("X-GitHub-Event", "unknown")
-        print(f"📥 Event: {event_type}")
-        print("📦 Payload:", payload)
+        data = None
 
-        result = {}
-
-        # PUSH event
         if event_type == "push":
-            author = payload.get("pusher", {}).get("name", "unknown")
-            to_branch = payload.get("ref", "").split("/")[-1]
-            timestamp = payload.get("head_commit", {}).get("timestamp", "")
-            formatted_time = format_timestamp(timestamp)
+            head_commit = payload.get("head_commit")
+            if not head_commit:
+                return jsonify({"error": "No head_commit in payload"}), 200
 
-            result = {
-                "type": "push",
-                "author": author,
-                "to_branch": to_branch,
-                "timestamp": formatted_time,
-                "message": f'"{author}" pushed to "{to_branch}" on {formatted_time}'
+            data = {
+                "action": "push",
+                "author": payload.get("pusher", {}).get("name", "unknown"),
+                "to_branch": payload.get("ref", "").split("/")[-1],
+                "timestamp": datetime.strptime(head_commit['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
             }
 
-        # PULL REQUEST (opened)
         elif event_type == "pull_request":
-            action = payload.get("action")
             pr = payload.get("pull_request", {})
-            if action == "opened":
-                author = pr.get("user", {}).get("login", "unknown")
-                from_branch = pr.get("head", {}).get("ref", "")
-                to_branch = pr.get("base", {}).get("ref", "")
-                timestamp = pr.get("created_at", "")
-                formatted_time = format_timestamp(timestamp)
+            action_type = payload.get("action")
 
-                result = {
-                    "type": "pull_request",
-                    "author": author,
-                    "from_branch": from_branch,
-                    "to_branch": to_branch,
-                    "timestamp": formatted_time,
-                    "message": f'"{author}" submitted a pull request from "{from_branch}" to "{to_branch}" on {formatted_time}'
+            if action_type == "opened":
+                data = {
+                    "action": "pull_request",
+                    "author": pr.get("user", {}).get("login", "unknown"),
+                    "from_branch": pr.get("head", {}).get("ref", "unknown"),
+                    "to_branch": pr.get("base", {}).get("ref", "unknown"),
+                    "timestamp": datetime.strptime(pr['created_at'], "%Y-%m-%dT%H:%M:%SZ")
                 }
 
-            # MERGE (pull_request closed and merged = true)
-            elif action == "closed" and pr.get("merged"):
-                author = pr.get("user", {}).get("login", "unknown")
-                from_branch = pr.get("head", {}).get("ref", "")
-                to_branch = pr.get("base", {}).get("ref", "")
-                timestamp = pr.get("merged_at", "")
-                formatted_time = format_timestamp(timestamp)
-
-                result = {
-                    "type": "merge",
-                    "author": author,
-                    "from_branch": from_branch,
-                    "to_branch": to_branch,
-                    "timestamp": formatted_time,
-                    "message": f'"{author}" merged branch "{from_branch}" to "{to_branch}" on {formatted_time}'
+            elif action_type == "closed" and pr.get("merged"):
+                data = {
+                    "action": "merge",
+                    "author": pr.get("user", {}).get("login", "unknown"),
+                    "from_branch": pr.get("head", {}).get("ref", "unknown"),
+                    "to_branch": pr.get("base", {}).get("ref", "unknown"),
+                    "timestamp": datetime.strptime(pr['merged_at'], "%Y-%m-%dT%H:%M:%SZ")
                 }
 
-        if result:
-            collection.insert_one(result)
-            print("✅ Stored:", result)
-            return "Success", 200
+        if data:
+            collection.insert_one(data)
+            print("✅ Event stored in MongoDB:", data)
+            return jsonify({"message": f"{data['action']} event stored"}), 200
         else:
-            print("⚠️ Ignored event or unsupported action.")
-            return "No action", 200
+            print("ℹ️ Event ignored or unsupported.")
+            return jsonify({"message": "Ignored event"}), 200
 
     except Exception as e:
-        print("❌ Error:", e)
-        traceback.print_exc()
-        return "Server Error", 500
+        print("❌ Error:", str(e))
+        return jsonify({"error": str(e)}), 500
 
+# Run the Flask server
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    app.run(debug=True, port=5000)
 
