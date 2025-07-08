@@ -20,7 +20,7 @@ collection = db[mongo_collection]
 
 @app.route('/')
 def index():
-    latest_event = collection.find_one(sort=[('_id', -1)])
+    latest_event = collection.find_one({"timestamp": {"$exists": True}}, sort=[("timestamp", -1)])
     return render_template('index.html', data=latest_event)
 
 @app.route('/webhook', methods=['POST'])

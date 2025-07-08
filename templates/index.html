@@ -34,7 +34,12 @@
       {% elif data.action == 'merge' %}
         <p><strong>{{ data.author }}</strong> merged branch <strong>{{ data.from_branch }}</strong> to <strong>{{ data.to_branch }}</strong></p>
       {% endif %}
-      <p class="time">on {{ data.timestamp.strftime('%#d %B %Y - %#I:%M %p UTC') }}</p>
+      {% if data.timestamp %}
+  <p class="time">on {{ data.timestamp.strftime('%#d %B %Y - %#I:%M %p UTC') }}</p>
+{% else %}
+  <p class="time">Timestamp not available</p>
+{% endif %}
+
     {% else %}
       <p>No data received yet.</p>
     {% endif %}
