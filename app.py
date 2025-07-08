@@ -20,11 +20,13 @@ db = client[mongo_db]
 collection = db[mongo_collection]
 
 def parse_timestamp(timestamp_str):
-    """Parse ISO8601 timestamp to datetime with UTC timezone, fallback to now."""
     try:
-        return datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        # Try parsing with microseconds and timezone offset first
+        return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
     except Exception:
+        # Fallback: current UTC time
         return datetime.now(timezone.utc)
+
 
 # Custom Jinja filter for ordinal suffix
 def ordinal_suffix(value):
