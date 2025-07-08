@@ -1,27 +1,52 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Latest GitHub Webhook Event</title>
-    <meta http-equiv="refresh" content="15" />
+  <title>Latest GitHub Webhook Event</title>
+  <meta http-equiv="refresh" content="15" />
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f4f4f4;
+      padding: 2em;
+      max-width: 600px;
+      margin: auto;
+    }
+    .card {
+      background: white;
+      padding: 1.5em;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .time {
+      color: gray;
+      font-size: 0.9em;
+    }
+  </style>
 </head>
 <body>
+  <div class="card">
     <h1>Latest GitHub Webhook Event</h1>
+
     {% if data %}
-        {% if data.action == 'push' %}
-            <p><strong>{{ data.author }}</strong> pushed to <strong>{{ data.to_branch }}</strong>
-            {% if data.timestamp %} at {{ data.timestamp }}{% else %} (Timestamp not available){% endif %}</p>
-        {% elif data.action == 'opened' %}
-            <p><strong>{{ data.author }}</strong> opened a pull request to <strong>{{ data.to_branch }}</strong>
-            {% if data.timestamp %} at {{ data.timestamp }}{% else %} (Timestamp not available){% endif %}</p>
-        {% elif data.action == 'closed' %}
-            <p><strong>{{ data.author }}</strong> merged a pull request to <strong>{{ data.to_branch }}</strong>
-            {% if data.timestamp %} at {{ data.timestamp }}{% else %} (Timestamp not available){% endif %}</p>
-        {% else %}
-            <p>Unhandled action: {{ data.action }}</p>
-        {% endif %}
+      {% if data.action == 'push' %}
+        <p><strong>{{ data.author }}</strong> pushed to <strong>{{ data.to_branch }}</strong></p>
+      {% elif data.action == 'pull_request' %}
+        <p><strong>{{ data.author }}</strong> submitted a pull request from <strong>{{ data.from_branch }}</strong> to <strong>{{ data.to_branch }}</strong></p>
+      {% elif data.action == 'merge' %}
+        <p><strong>{{ data.author }}</strong> merged branch <strong>{{ data.from_branch }}</strong> to <strong>{{ data.to_branch }}</strong></p>
+      {% else %}
+        <p>Unhandled action: {{ data.action }}</p>
+      {% endif %}
+
+      {% if data.timestamp %}
+        <p class="time">on {{ data.timestamp.strftime('%d %B %Y - %I:%M %p UTC') }}</p>
+      {% else %}
+        <p class="time">Timestamp not available</p>
+      {% endif %}
     {% else %}
-        <p>No events received yet.</p>
+      <p>No events received yet.</p>
     {% endif %}
+  </div>
 </body>
 </html>
 
