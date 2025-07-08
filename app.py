@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
@@ -20,58 +20,53 @@ collection = db[mongo_collection]
 
 @app.route('/')
 def index():
-    # Fetch the latest event
     latest = collection.find_one(sort=[("timestamp", -1)])
-    
     if latest:
-        if isinstance(latest["timestamp"], datetime):
-            pass  # already datetime object
-        elif isinstance(latest["timestamp"], str):
+        if isinstance(latest.get("timestamp"), str):
             latest["timestamp"] = datetime.strptime(latest["timestamp"], "%Y-%m-%dT%H:%M:%SZ")
-    
+        elif isinstance(latest.get("timestamp"), datetime):
+            latest["timestamp"] = latest["timestamp"]
     return render_template("index.html", data=latest)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    print("========== HEADERS ==========")
-    print(dict(request.headers))
-
-    print("========== RAW BODY ==========")
-    print(request.data.decode("utf-8"))
-
     try:
+        print("\n========== HEADERS ==========")
+        print(dict(request.headers))
+
+        print("\n========== RAW BODY ==========")
+        print(request.data.decode("utf-8"))
+
+        # Force parse JSON
         payload = request.get_json(force=True)
-    except Exception as e:
-        print("[ERROR] JSON parsing failed:", e)
-        return jsonify({"message": "Invalid JSON"}), 400
 
-    if not payload:
-        print("[ERROR] Empty JSON payload")
-        return jsonify({"message": "Empty payload"}), 400
+        print("\n========== PARSED PAYLOAD ==========")
+        print(payload)
 
-    print("========== PARSED PAYLOAD ==========")
-    print(payload)
+        if not payload:
+            print("❌ Empty or invalid payload")
+            return jsonify({"message": "Empty payload"}), 400
 
-    action = None
-    author = None
-    from_branch = None
-    to_branch = None
-    timestamp = datetime.now(timezone.utc)
+        action = None
+        author = None
+        from_branch = None
+        to_branch = None
+        timestamp = datetime.now(timezone.utc)
 
-    try:
-        # Handle push event
+        # Handle push
         if 'pusher' in payload:
             action = "push"
             author = payload['pusher']['name']
             to_branch = payload['ref'].split('/')[-1]
             timestamp = datetime.strptime(payload['head_commit']['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
 
-        # Handle pull request opened
+        # Handle pull_request opened
         elif payload.get("action") == "opened" and "pull_request" in payload:
             action = "pull_request"
             pr = payload["pull_request"]
             author = pr["user"]["login"]
             from_branch = pr["head"]["ref"]
+            to_branch = pr["base"]["ref"]
             timestamp = datetime.strptime(pr["created_at"], "%Y-%m-%dT%H:%M:%SZ")
 
         # Handle merged pull request
@@ -83,6 +78,7 @@ def webhook():
             to_branch = pr["base"]["ref"]
             timestamp = datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ")
 
+        # Store in DB
         if action:
             collection.insert_one({
                 "action": action,
@@ -92,15 +88,16 @@ def webhook():
                 "timestamp": timestamp,
                 "received_at": datetime.now(timezone.utc)
             })
-            print(f"[INFO] Stored {action} event by {author}")
+            print(f"[✅ Stored] {action} event by {author}")
             return jsonify({"message": "Event stored"}), 200
         else:
-            print("[WARN] Unrecognized event")
+            print("[⚠] Event not supported or missing fields")
             return jsonify({"message": "Event ignored"}), 400
 
     except Exception as e:
-        print("[ERROR] Processing error:", e)
-        return jsonify({"message": "Server error"}), 500
+        print("❌ Exception:", e)
+        return jsonify({"message": "Webhook processing error"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
+
