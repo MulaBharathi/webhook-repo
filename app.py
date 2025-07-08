@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 import traceback
 
-# Load environment variables from .env
+# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
@@ -20,16 +20,25 @@ db = client[mongo_db]
 collection = db[mongo_collection]
 
 def parse_timestamp(timestamp_str):
-    """Safely parse ISO timestamps to datetime, fallback to now UTC"""
+    """Parse ISO8601 timestamp to datetime with UTC timezone, fallback to now."""
     try:
         return datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     except Exception:
         return datetime.now(timezone.utc)
 
+# Custom Jinja filter for ordinal suffix
+def ordinal_suffix(value):
+    n = int(value)
+    if 11 <= (n % 100) <= 13:
+        return "th"
+    else:
+        return {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+
+app.jinja_env.filters['ordinal_suffix'] = ordinal_suffix
+
 @app.route('/')
 def index():
     latest_event = collection.find_one(sort=[('_id', -1)])
-    # Convert timestamp string to datetime if needed
     if latest_event and 'timestamp' in latest_event:
         ts = latest_event['timestamp']
         if isinstance(ts, str):
@@ -39,13 +48,6 @@ def index():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        print("=== Headers ===")
-        print(dict(request.headers))
-
-        raw_body = request.data.decode("utf-8")
-        print("=== Raw body ===")
-        print(raw_body)
-
         payload = request.get_json(force=True)
         if not payload:
             return jsonify({"message": "Empty payload"}), 400
@@ -56,14 +58,14 @@ def webhook():
         to_branch = None
         timestamp = datetime.now(timezone.utc)
 
-        # Handle push event
+        # PUSH event
         if 'pusher' in payload and 'ref' in payload and 'head_commit' in payload:
             action = "push"
             author = payload['pusher'].get('name', 'unknown')
             to_branch = payload['ref'].split('/')[-1]
             timestamp = parse_timestamp(payload['head_commit'].get('timestamp', ''))
 
-        # Handle pull request opened event
+        # PULL_REQUEST opened
         elif payload.get("action") == "opened" and "pull_request" in payload:
             action = "pull_request"
             pr = payload["pull_request"]
@@ -72,7 +74,7 @@ def webhook():
             to_branch = pr["base"].get("ref", None)
             timestamp = parse_timestamp(pr.get("created_at", ''))
 
-        # Handle pull request merged event
+        # PULL_REQUEST merged (closed and merged)
         elif payload.get("action") == "closed" and payload.get("pull_request", {}).get("merged"):
             action = "merge"
             pr = payload["pull_request"]
@@ -82,10 +84,9 @@ def webhook():
             timestamp = parse_timestamp(pr.get("merged_at", ''))
 
         if not action:
-            print("[WARN] Unrecognized event")
             return jsonify({"message": "Event ignored"}), 400
 
-        # Store in MongoDB
+        # Save to MongoDB with ISO format timestamp strings
         doc = {
             "action": action,
             "author": author,
@@ -95,14 +96,13 @@ def webhook():
             "received_at": datetime.now(timezone.utc).isoformat()
         }
         collection.insert_one(doc)
-        print(f"[INFO] Stored {action} event by {author}")
+        print(f"[INFO] Stored event: {action} by {author}")
         return jsonify({"message": "Event stored"}), 200
 
     except Exception as e:
-        print("[ERROR] Processing error:", e)
+        print("[ERROR] Exception while processing webhook:")
         traceback.print_exc()
         return jsonify({"message": "Server error"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
-
