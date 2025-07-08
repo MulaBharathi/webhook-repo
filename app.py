@@ -1,15 +1,15 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, render_template, jsonify
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
 
-# MongoDB configuration
+# MongoDB connection
 mongo_uri = os.getenv("MONGO_URI")
 mongo_db = os.getenv("MONGO_DB")
 mongo_collection = os.getenv("MONGO_COLLECTION")
@@ -20,62 +20,90 @@ collection = db[mongo_collection]
 
 @app.route('/')
 def index():
-    latest_event = collection.find_one({"timestamp": {"$exists": True}}, sort=[("timestamp", -1)])
+    latest_event = collection.find_one(sort=[('_id', -1)])
+
+    # Convert timestamp string to datetime object (for old data)
+    if latest_event and isinstance(latest_event.get("timestamp"), str):
+        try:
+            latest_event["timestamp"] = datetime.strptime(latest_event["timestamp"], "%Y-%m-%dT%H:%M:%SZ")
+        except Exception as e:
+            print("Error parsing timestamp:", e)
+            latest_event["timestamp"] = None
+
     return render_template('index.html', data=latest_event)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    print("========== HEADERS ==========")
+    print(dict(request.headers))
+
+    print("========== RAW BODY ==========")
+    print(request.data.decode("utf-8"))
+
     try:
         payload = request.get_json(force=True)
-        if not payload:
-            print("❌ Invalid or missing JSON payload")
-            return "Invalid JSON", 400
+    except Exception as e:
+        print("[ERROR] JSON parsing failed:", e)
+        return jsonify({"message": "Invalid JSON"}), 400
 
-        event_type = request.headers.get('X-GitHub-Event', 'unknown')
-        print(f"\n🔔 Received event: {event_type}")
+    if not payload:
+        print("[ERROR] Empty JSON payload")
+        return jsonify({"message": "Empty payload"}), 400
 
-        doc = {
-            "event": event_type,
-            "received_at": datetime.utcnow()
-        }
+    print("========== PARSED PAYLOAD ==========")
+    print(payload)
 
-        if event_type == 'push':
-            doc["action"] = "push"
-            doc["author"] = payload.get("head_commit", {}).get("author", {}).get("name")
-            doc["to_branch"] = payload.get("ref", "").split("/")[-1]
+    action = None
+    author = None
+    from_branch = None
+    to_branch = None
+    timestamp = datetime.now(timezone.utc)
 
-            ts = payload.get("head_commit", {}).get("timestamp")
-            if ts:
-                try:
-                    doc["timestamp"] = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
-                except ValueError:
-                    print("⚠️ Invalid timestamp format in push event")
+    try:
+        # Handle push event
+        if 'pusher' in payload:
+            action = "push"
+            author = payload['pusher']['name']
+            to_branch = payload['ref'].split('/')[-1]
+            timestamp = datetime.strptime(payload['head_commit']['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
 
-        elif event_type == 'pull_request':
-            pr = payload.get("pull_request", {})
-            doc["action"] = "pull_request"
-            doc["author"] = pr.get("user", {}).get("login")
-            doc["to_branch"] = pr.get("base", {}).get("ref")
+        # Handle pull request opened
+        elif payload.get("action") == "opened" and "pull_request" in payload:
+            action = "pull_request"
+            pr = payload["pull_request"]
+            author = pr["user"]["login"]
+            from_branch = pr["head"]["ref"]
+            to_branch = pr["base"]["ref"]
+            timestamp = datetime.strptime(pr["created_at"], "%Y-%m-%dT%H:%M:%SZ")
 
-            ts = pr.get("created_at")
-            if ts:
-                try:
-                    doc["timestamp"] = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
-                except ValueError:
-                    print("⚠️ Invalid timestamp format in pull_request event")
+        # Handle merged pull request
+        elif payload.get("action") == "closed" and payload.get("pull_request", {}).get("merged"):
+            action = "merge"
+            pr = payload["pull_request"]
+            author = pr["user"]["login"]
+            from_branch = pr["head"]["ref"]
+            to_branch = pr["base"]["ref"]
+            timestamp = datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ")
 
+        if action:
+            collection.insert_one({
+                "action": action,
+                "author": author,
+                "from_branch": from_branch,
+                "to_branch": to_branch,
+                "timestamp": timestamp,
+                "received_at": datetime.now(timezone.utc)
+            })
+            print(f"[INFO] Stored {action} event by {author}")
+            return jsonify({"message": "Event stored"}), 200
         else:
-            doc["note"] = f"Unhandled event type: {event_type}"
-
-        collection.insert_one(doc)
-        print("✅ Event saved to MongoDB")
-
-        return jsonify({"status": "ok"}), 200
+            print("[WARN] Unrecognized event")
+            return jsonify({"message": "Event ignored"}), 400
 
     except Exception as e:
-        print(f"❌ Exception: {e}")
-        return jsonify({"error": str(e)}), 500
+        print("[ERROR] Processing error:", e)
+        return jsonify({"message": "Server error"}), 500
 
-if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+if __name__ == '__main__':
+    app.run(debug=True)
 
