@@ -29,6 +29,12 @@ def index():
 def webhook():
     payload = request.get_json()
     print("[DEBUG] Incoming payload:", payload)
+    if not payload:
+        print("[ERROR] No payload received")
+        return jsonify({"message": "Invalid JSON"}), 400
+
+    event = request.headers.get("X-GitHub-Event")
+    print(f"[DEBUG] GitHub Event: {event}")
 
     action = None
     author = None
