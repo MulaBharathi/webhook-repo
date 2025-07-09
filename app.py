@@ -29,11 +29,13 @@ def webhook():
         if event_type == 'push':
             pusher = data.get('pusher', {})
             ref = data.get('ref', '')
-            if pusher and ref:
+            author = pusher.get('name', 'unknown')
+            to_branch = ref.split('/')[-1] if '/' in ref else 'unknown'
+            if author and to_branch:
                 parsed_event = {
                     "type": "push",
-                    "author": pusher.get('name'),
-                    "to_branch": ref.split('/')[-1],
+                    "author": author,
+                    "to_branch": to_branch,
                     "timestamp": format_timestamp()
                 }
 
