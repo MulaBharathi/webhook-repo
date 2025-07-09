@@ -1,20 +1,27 @@
 from flask import Flask, request, jsonify, render_template
 from pymongo import MongoClient
-from datetime import datetime, timezone
-import os
+from datetime import datetime
+import pytz
 
 app = Flask(__name__)
 
-# MongoDB connection
+# ✅ MongoDB Atlas connection (with password properly encoded)
 client = MongoClient("mongodb+srv://dbuser:Bharu%40446@cluster0.gt4fbl2.mongodb.net/?retryWrites=true&w=majority")
 db = client["webhooks"]
 collection = db["events"]
 
-# Format current UTC timestamp
+# ✅ Utility: UTC timestamp with formatting
 def format_timestamp():
-    return datetime.now(timezone.utc).strftime("%d %B %Y - %I:%M %p UTC")
+    india_tz = pytz.timezone("Asia/Kolkata")
+    now = datetime.now(india_tz)
+    return now.strftime("%d %B %Y - %I:%M %p IST")
 
-# Webhook endpoint
+# ✅ Home route
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+# ✅ Webhook endpoint
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -37,32 +44,42 @@ def webhook():
                 }
 
         elif event_type == 'pull_request':
+            action = data.get('action')
             pr = data.get('pull_request', {})
-            action = data.get('action', '')
-            if pr:
+            if action in ['opened', 'reopened'] and pr:
                 parsed_event = {
                     "type": "pull_request",
                     "author": pr.get('user', {}).get('login'),
-                    "action": action,
-                    "title": pr.get('title'),
+                    "from_branch": pr.get('head', {}).get('ref'),
+                    "to_branch": pr.get('base', {}).get('ref'),
                     "timestamp": format_timestamp()
                 }
 
-        # You can add more event types here if needed
+        elif event_type == 'merge':
+            # Optional: You can remove this if you're not manually handling merge events
+            parsed_event = {
+                "type": "merge",
+                "author": data.get('sender', {}).get('login'),
+                "from_branch": data.get('from'),
+                "to_branch": data.get('to'),
+                "timestamp": format_timestamp()
+            }
 
+        # ✅ Log & Insert
         if parsed_event:
+            print("✅ Parsed Event:", parsed_event)
             collection.insert_one(parsed_event)
-            print("✅ Successfully inserted event to MongoDB.")
-            return '', 204
+            print("✅ INSERT SUCCESS")
         else:
-            print("⚠️ No valid event data found.")
-            return '', 204
+            print("⚠️ No data parsed for this event")
+
+        return '', 204
 
     except Exception as e:
         print(f"❌ Error processing webhook: {e}")
         return jsonify({"error": str(e)}), 500
 
-# Route to return latest event
+# ✅ API to fetch latest event
 @app.route('/events', methods=['GET'])
 def get_latest_event():
     try:
@@ -71,11 +88,6 @@ def get_latest_event():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Route to render UI
-@app.route('/')
-def index():
-    return render_template('index.html')
-
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(port=5000, debug=True)
 
