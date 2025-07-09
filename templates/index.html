@@ -1,38 +1,63 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Latest GitHub Event</title>
+  <title>GitHub Webhook Events</title>
+  <meta charset="UTF-8" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f7f7f7;
+      color: #333;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .card {
+      background: white;
+      padding: 20px 30px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      font-size: 1.2em;
+    }
+  </style>
 </head>
 <body>
-  <h2>Latest GitHub Event</h2>
-  <div id="event">Loading...</div>
+  <div class="card" id="event">Loading latest event...</div>
 
   <script>
     async function fetchEvent() {
-      const res = await fetch('/events');
-      const data = await res.json();
+      try {
+        const res = await fetch('/events');
+        const data = await res.json();
 
-      if (data.length === 0) {
-        document.getElementById('event').innerText = 'No event found yet.';
-        return;
+        if (data.length === 0) {
+          document.getElementById('event').innerText = "No events yet.";
+          return;
+        }
+
+        const event = data[0];
+        let message = '';
+
+        if (event.type === 'push') {
+          message = `"${event.author}" pushed to "${event.to_branch}" on ${event.timestamp}`;
+        } else if (event.type === 'pull_request') {
+          message = `"${event.author}" submitted a pull request from "${event.from_branch}" to "${event.to_branch}" on ${event.timestamp}`;
+        } else if (event.type === 'merge') {
+          message = `"${event.author}" merged branch "${event.from_branch}" to "${event.to_branch}" on ${event.timestamp}`;
+        } else {
+          message = "Unknown event type.";
+        }
+
+        document.getElementById('event').innerText = message;
+      } catch (err) {
+        document.getElementById('event').innerText = "Error fetching event.";
+        console.error(err);
       }
-
-      const event = data[0];
-      let message = "";
-
-      if (event.type === "push") {
-        message = `"${event.author}" pushed to "${event.to_branch}" on ${event.timestamp}`;
-      } else if (event.type === "pull_request") {
-        message = `"${event.author}" submitted a pull request from "${event.from_branch}" to "${event.to_branch}" on ${event.timestamp}`;
-      } else if (event.type === "merge") {
-        message = `"${event.author}" merged branch "${event.from_branch}" to "${event.to_branch}" on ${event.timestamp}`;
-      }
-
-      document.getElementById('event').innerText = message;
     }
 
-    setInterval(fetchEvent, 15000);  // poll every 15 seconds
-    fetchEvent();  // initial call
+    fetchEvent();
+    setInterval(fetchEvent, 15000);
   </script>
 </body>
 </html>
