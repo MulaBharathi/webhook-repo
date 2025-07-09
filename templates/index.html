@@ -1,57 +1,34 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
   <title>GitHub Webhook Events</title>
-  <meta charset="UTF-8" />
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f7f7f7;
-      color: #333;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-    }
-    .card {
-      background: white;
-      padding: 20px 30px;
-      border-radius: 10px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-      font-size: 1.2em;
-    }
-  </style>
 </head>
 <body>
-  <div class="card" id="event">Loading latest event...</div>
+  <h2>Latest Event</h2>
+  <div id="event">Loading...</div>
 
   <script>
     async function fetchEvent() {
       try {
         const res = await fetch('/events');
         const data = await res.json();
-
-        if (data.length === 0) {
-          document.getElementById('event').innerText = "No events yet.";
-          return;
-        }
-
-        const event = data[0];
-        let message = '';
-
-        if (event.type === 'push') {
-          message = `"${event.author}" pushed to "${event.to_branch}" on ${event.timestamp}`;
-        } else if (event.type === 'pull_request') {
-          message = `"${event.author}" submitted a pull request from "${event.from_branch}" to "${event.to_branch}" on ${event.timestamp}`;
-        } else if (event.type === 'merge') {
-          message = `"${event.author}" merged branch "${event.from_branch}" to "${event.to_branch}" on ${event.timestamp}`;
+        if (data.length > 0) {
+          const e = data[0];
+          let msg = '';
+          if (e.type === 'push') {
+            msg = `"${e.author}" pushed to "${e.to_branch}" on ${e.timestamp}`;
+          } else if (e.type === 'pull_request') {
+            msg = `"${e.author}" submitted a pull request from "${e.from_branch}" to "${e.to_branch}" on ${e.timestamp}`;
+          } else if (e.type === 'merge') {
+            msg = `"${e.author}" merged branch "${e.from_branch}" to "${e.to_branch}" on ${e.timestamp}`;
+          }
+          document.getElementById('event').innerText = msg;
         } else {
-          message = "Unknown event type.";
+          document.getElementById('event').innerText = "No events yet.";
         }
-
-        document.getElementById('event').innerText = message;
       } catch (err) {
-        document.getElementById('event').innerText = "Error fetching event.";
+        document.getElementById('event').innerText = "Error loading event.";
         console.error(err);
       }
     }
