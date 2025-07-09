@@ -20,10 +20,10 @@ def format_timestamp():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        data = request.json
-        event_type = request.headers.get('X-GitHub-Event')
-        print(f"📥 Received event: {event_type}")
-        parsed_event = {}
+        data = request.get_json(force=True)
+        event_type = request.headers.get('X-GitHub-Event','unknown')
+        print("📥 Event Type:", event_type)
+        print("📦 Raw Payload:", data)
 
         # Handle push event
         if event_type == 'push':
