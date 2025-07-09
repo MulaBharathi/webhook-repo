@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Latest GitHub Event</title>
+</head>
+<body>
+  <h2>Latest GitHub Event</h2>
+  <div id="event">Loading...</div>
+
+  <script>
+    async function fetchEvent() {
+      const res = await fetch('/events');
+      const data = await res.json();
+
+      if (data.length === 0) {
+        document.getElementById('event').innerText = 'No event found yet.';
+        return;
+      }
+
+      const event = data[0];
+      let message = "";
+
+      if (event.type === "push") {
+        message = `"${event.author}" pushed to "${event.to_branch}" on ${event.timestamp}`;
+      } else if (event.type === "pull_request") {
+        message = `"${event.author}" submitted a pull request from "${event.from_branch}" to "${event.to_branch}" on ${event.timestamp}`;
+      } else if (event.type === "merge") {
+        message = `"${event.author}" merged branch "${event.from_branch}" to "${event.to_branch}" on ${event.timestamp}`;
+      }
+
+      document.getElementById('event').innerText = message;
+    }
+
+    setInterval(fetchEvent, 15000);  // poll every 15 seconds
+    fetchEvent();  // initial call
+  </script>
+</body>
+</html>
+
