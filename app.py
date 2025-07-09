@@ -76,8 +76,11 @@ def webhook():
 def get_latest_event():
     try:
         event = collection.find().sort('_id', -1).limit(1)
-        return jsonify([doc for doc in event])
+        docs = [doc for doc in event]
+        print("📤 Sending event to UI:", docs)
+        return jsonify(docs)
     except Exception as e:
+        print("❌ Error in /events:", str(e))
         return jsonify({"error": str(e)}), 500
 
 # Serve index.html
