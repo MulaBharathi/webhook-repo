@@ -1,32 +1,30 @@
 from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, timezone
 
 app = Flask(__name__)
-CORS(app)
 
-# ✅ MongoDB connection
-try:
-    client = MongoClient("mongodb+srv://dbuser:Bharu%40446@cluster0.gt4fbl2.mongodb.net/?retryWrites=true&w=majority")
-    db = client["github_events"]
-    collection = db["events"]
-    print("✅ MongoDB connected. Databases:", client.list_database_names())
-except Exception as e:
-    print("❌ MongoDB connection failed:", e)
+# MongoDB Connection
+client = MongoClient("mongodb+srv://dbuser:Bharu%40446@cluster0.gt4fbl2.mongodb.net/?retryWrites=true&w=majority")
+db = client["webhooks"]
+collection = db["events"]
 
-# ✅ Format timestamp to human-readable UTC
+# Function to format UTC timestamp
 def format_timestamp():
-    return datetime.utcnow().strftime("%-d %B %Y - %-I:%M %p UTC")
+    return datetime.now(timezone.utc).strftime("%d %B %Y - %I:%M %p UTC")
 
-# ✅ GitHub webhook endpoint
+# Home route to render UI
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+# Route to handle GitHub Webhooks
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        data = request.get_json(force=True)
-        event_type = request.headers.get('X-GitHub-Event', 'unknown')
-
-        print("📥 Event Type:", event_type)
+        data = request.json
+        event_type = request.headers.get('X-GitHub-Event')
+        print(f"\n📥 Event Type: {event_type}")
         print("📦 Raw Payload:", data)
 
         parsed_event = {}
@@ -37,27 +35,31 @@ def webhook():
             if pusher and ref:
                 parsed_event = {
                     "type": "push",
-                    "author": pusher.get('name', 'unknown'),
+                    "author": pusher.get('name'),
                     "to_branch": ref.split('/')[-1],
                     "timestamp": format_timestamp()
                 }
 
         elif event_type == 'pull_request':
-            action = data.get('action', '')
+            action = data.get('action')
             pr = data.get('pull_request', {})
-            user = pr.get('user', {}).get('login', 'unknown')
-            from_branch = pr.get('head', {}).get('ref', '')
-            to_branch = pr.get('base', {}).get('ref', '')
-
-            if action == 'opened':
+            user = pr.get('user', {})
+            base = pr.get('base', {})
+            head = pr.get('head', {})
+            if action == 'opened' and user and base and head:
                 parsed_event = {
                     "type": "pull_request",
-                    "author": user,
-                    "from_branch": from_branch,
-                    "to_branch": to_branch,
+                    "author": user.get('login'),
+                    "from_branch": head.get('ref'),
+                    "to_branch": base.get('ref'),
                     "timestamp": format_timestamp()
                 }
-            elif action == 'closed' and pr.get('merged', False):
+
+        elif event_type == 'pull_request' and data.get('action') == 'closed':
+            if data.get('pull_request', {}).get('merged'):
+                user = data['pull_request']['user']['login']
+                from_branch = data['pull_request']['head']['ref']
+                to_branch = data['pull_request']['base']['ref']
                 parsed_event = {
                     "type": "merge",
                     "author": user,
@@ -67,20 +69,18 @@ def webhook():
                 }
 
         if parsed_event:
-            result = collection.insert_one(parsed_event)
-            print("✅ Event stored in MongoDB. ID:", result.inserted_id)
-            return jsonify({"message": "Event stored"}), 200
+            print("✅ Inserting into MongoDB:", parsed_event)
+            collection.insert_one(parsed_event)
+            return '', 204
         else:
-            print("⚠️ Ignored or unsupported event.")
-            return jsonify({"message": "Ignored or unsupported event"}), 204
+            print("⚠️ No relevant data to store.")
+            return '', 204
 
     except Exception as e:
-        import traceback
-        print("❌ Error processing webhook:", str(e))
-        traceback.print_exc()
+        print(f"❌ Error processing webhook: {e}")
         return jsonify({"error": str(e)}), 500
 
-# ✅ Fetch latest event for frontend
+# Route to get latest event for UI polling
 @app.route('/events', methods=['GET'])
 def get_latest_event():
     try:
@@ -89,13 +89,6 @@ def get_latest_event():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ✅ Serve frontend
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-# ✅ Run the Flask server
 if __name__ == '__main__':
     app.run(debug=True)
-
 
