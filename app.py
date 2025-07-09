@@ -9,22 +9,28 @@ client = MongoClient("mongodb+srv://dbuser:Bharu%40446@cluster0.gt4fbl2.mongodb.
 db = client["webhooks"]
 collection = db["events"]
 
+# Format timestamp in UTC (cross-platform)
 def format_timestamp():
     now = datetime.utcnow()
     day = now.day
     suffix = 'th' if 11 <= day <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
-    formatted = now.strftime(f"{day}{suffix} %B %Y - %-I:%M %p UTC")
-    return formatted
+    hour = now.strftime("%I").lstrip("0")  # remove leading 0
+    minute = now.strftime("%M")
+    am_pm = now.strftime("%p")
+    date_str = f"{day}{suffix} {now.strftime('%B %Y')} - {hour}:{minute} {am_pm} UTC"
+    return date_str
 
+# UI route
 @app.route('/')
 def index():
     return render_template('index.html')
 
+# Webhook endpoint
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
     event_type = request.headers.get('X-GitHub-Event')
-    print(f"📥 Received event: {event_type}")
+    print(f"\n📥 Received event: {event_type}")
     print(f"📦 Raw Payload: {data}")
 
     parsed_event = {}
@@ -53,30 +59,29 @@ def webhook():
                     "timestamp": format_timestamp()
                 }
 
-        # Optional merge event handler if you want to support it:
-        elif event_type == 'pull_request' and data.get('action') == 'closed' and data.get('pull_request', {}).get('merged'):
-            pr = data.get('pull_request', {})
-            parsed_event = {
-                "type": "merge",
-                "author": pr.get('user', {}).get('login'),
-                "from_branch": pr.get('head', {}).get('ref'),
-                "to_branch": pr.get('base', {}).get('ref'),
-                "timestamp": format_timestamp()
-            }
+            elif action == 'closed' and pr.get('merged'):
+                parsed_event = {
+                    "type": "merge",
+                    "author": pr.get('user', {}).get('login'),
+                    "from_branch": pr.get('head', {}).get('ref'),
+                    "to_branch": pr.get('base', {}).get('ref'),
+                    "timestamp": format_timestamp()
+                }
 
-        # Insert if parsed
+        # Insert event into MongoDB
         if parsed_event:
             collection.insert_one(parsed_event)
-            print(f"✅ Event saved: {parsed_event}")
+            print(f"✅ Event saved to DB: {parsed_event}")
             return '', 204
         else:
-            print("⚠️ No valid data to save.")
+            print("⚠️ No valid event parsed.")
             return '', 204
 
     except Exception as e:
         print(f"❌ Error processing webhook: {e}")
         return jsonify({'error': str(e)}), 500
 
+# Fetch latest event
 @app.route('/events', methods=['GET'])
 def get_latest_event():
     try:
@@ -85,6 +90,7 @@ def get_latest_event():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# Run app
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
 
