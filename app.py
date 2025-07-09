@@ -21,18 +21,21 @@ def webhook():
     try:
         data = request.json
         event_type = request.headers.get('X-GitHub-Event')
-        print(f"Received event type: {event_type}")
+        print("\n📥 Received Event:", event_type)
         print("Payload:", data)
 
         parsed_event = {}
 
-        if event_type == 'push' and 'pusher' in data:
-            parsed_event = {
-                "type": "push",
-                "author": data['pusher']['name'],
-                "to_branch": data['ref'].split('/')[-1],
-                "timestamp": format_timestamp()
-            }
+        if event_type == 'push':
+            pusher = data.get('pusher', {})
+            ref = data.get('ref', '')
+            if pusher and ref:
+                parsed_event = {
+                    "type": "push",
+                    "author": pusher.get('name'),
+                    "to_branch": ref.split('/')[-1],
+                    "timestamp": format_timestamp()
+                }
 
         elif event_type == 'pull_request':
             action = data.get('action')
@@ -56,17 +59,17 @@ def webhook():
 
         if parsed_event:
             collection.insert_one(parsed_event)
-            print("Event stored:", parsed_event)
+            print("✅ Event stored:", parsed_event)
             return jsonify({"message": "Event stored"}), 200
         else:
-            print("Ignored or unsupported event.")
+            print("⚠️ Ignored event or missing data.")
             return jsonify({"message": "Ignored or unsupported event"}), 204
 
     except Exception as e:
-        print("Error in /webhook:", str(e))
+        print("💥 Error in /webhook:", str(e))
         return jsonify({"error": str(e)}), 500
 
-# Get latest event
+# Route to get latest event
 @app.route('/events', methods=['GET'])
 def get_latest_event():
     try:
@@ -75,7 +78,7 @@ def get_latest_event():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Serve UI
+# Serve index.html
 @app.route('/')
 def index():
     return render_template('index.html')
