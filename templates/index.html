@@ -1,29 +1,46 @@
-<script>
-  async function fetchEvent() {
-    try {
-      const res = await fetch('/events');
-      const data = await res.json();
-      if (data.length > 0) {
-        const e = data[0];
-        let msg = '';
-        if (e.type === 'push') {
-          msg = `"${e.author}" pushed to "${e.to_branch}" on ${e.timestamp}`;
-        } else if (e.type === 'pull_request') {
-          msg = `"${e.author}" submitted a pull request from "${e.from_branch}" to "${e.to_branch}" on ${e.timestamp}`;
-        } else if (e.type === 'merge') {
-          msg = `"${e.author}" merged branch "${e.from_branch}" to "${e.to_branch}" on ${e.timestamp}`;
-        }
-        document.getElementById('event').innerText = msg;
-      } else {
-        document.getElementById('event').innerText = "No events yet.";
-      }
-    } catch (err) {
-      document.getElementById('event').innerText = "Error loading event.";
-      console.error(err);
-    }
-  }
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Latest GitHub Event</title>
+  <style>
+    body { font-family: Arial; padding: 2rem; background: #f0f0f0; }
+    h1 { font-size: 24px; }
+    #event { margin-top: 20px; font-size: 18px; color: #333; }
+  </style>
+</head>
+<body>
+  <h1>Latest Event</h1>
+  <p id="event">Loading...</p>
 
-  fetchEvent();
-  setInterval(fetchEvent, 15000);
-</script>
+  <script>
+    async function fetchEvent() {
+      try {
+        const res = await fetch("/events");
+        const data = await res.json();
+        const e = data[0];
+
+        if (e) {
+          let msg = "";
+          if (e.type === "push") {
+            msg = `"${e.author}" pushed to "${e.to_branch}" on ${e.timestamp}`;
+          } else if (e.type === "pull_request") {
+            msg = `"${e.author}" submitted a pull request from "${e.from_branch}" to "${e.to_branch}" on ${e.timestamp}`;
+          } else if (e.type === "merge") {
+            msg = `"${e.author}" merged branch "${e.from_branch}" to "${e.to_branch}" on ${e.timestamp}`;
+          }
+          document.getElementById("event").innerText = msg;
+        } else {
+          document.getElementById("event").innerText = "No events yet.";
+        }
+      } catch (err) {
+        document.getElementById("event").innerText = "Error loading event.";
+        console.error(err);
+      }
+    }
+
+    fetchEvent();
+    setInterval(fetchEvent, 15000);
+  </script>
+</body>
+</html>
 
