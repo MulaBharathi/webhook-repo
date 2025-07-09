@@ -2,49 +2,49 @@ from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from pymongo import MongoClient
 from datetime import datetime
-import os
 
 app = Flask(__name__)
 CORS(app)
 
-# MongoDB Connection (use your credentials here)
-client = MongoClient("mongodb+srv://dbuser:Bharu%40446@cluster0.gt4fbl2.mongodb.net/?retryWrites=true&w=majority")
-db = client["github_events"]
-collection = db["events"]
+# ✅ MongoDB connection
+try:
+    client = MongoClient("mongodb+srv://dbuser:Bharu%40446@cluster0.gt4fbl2.mongodb.net/?retryWrites=true&w=majority")
+    db = client["github_events"]
+    collection = db["events"]
+    print("✅ MongoDB connected. Databases:", client.list_database_names())
+except Exception as e:
+    print("❌ MongoDB connection failed:", e)
 
-# Helper function to format timestamps
+# ✅ Format timestamp to human-readable UTC
 def format_timestamp():
     return datetime.utcnow().strftime("%-d %B %Y - %-I:%M %p UTC")
 
-# GitHub Webhook Endpoint
+# ✅ GitHub webhook endpoint
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.get_json(force=True)
-        event_type = request.headers.get('X-GitHub-Event','unknown')
+        event_type = request.headers.get('X-GitHub-Event', 'unknown')
+
         print("📥 Event Type:", event_type)
         print("📦 Raw Payload:", data)
+
         parsed_event = {}
 
-        # Handle push event
         if event_type == 'push':
             pusher = data.get('pusher', {})
             ref = data.get('ref', '')
-            author = pusher.get('name', 'unknown')
-            to_branch = ref.split('/')[-1] if '/' in ref else 'unknown'
-
-            if author and to_branch:
+            if pusher and ref:
                 parsed_event = {
                     "type": "push",
-                    "author": author,
-                    "to_branch": to_branch,
+                    "author": pusher.get('name', 'unknown'),
+                    "to_branch": ref.split('/')[-1],
                     "timestamp": format_timestamp()
                 }
 
-        # Handle pull_request and merge
         elif event_type == 'pull_request':
-            pr = data.get('pull_request', {})
             action = data.get('action', '')
+            pr = data.get('pull_request', {})
             user = pr.get('user', {}).get('login', 'unknown')
             from_branch = pr.get('head', {}).get('ref', '')
             to_branch = pr.get('base', {}).get('ref', '')
@@ -66,37 +66,35 @@ def webhook():
                     "timestamp": format_timestamp()
                 }
 
-        # Store event if parsed
         if parsed_event:
-            print("✅ Storing event:", parsed_event)
-            collection.insert_one(parsed_event)
+            result = collection.insert_one(parsed_event)
+            print("✅ Event stored in MongoDB. ID:", result.inserted_id)
             return jsonify({"message": "Event stored"}), 200
         else:
-            print("⚠️ Event ignored or unsupported")
+            print("⚠️ Ignored or unsupported event.")
             return jsonify({"message": "Ignored or unsupported event"}), 204
 
     except Exception as e:
-        print("❌ Error in /webhook:", str(e))
+        import traceback
+        print("❌ Error processing webhook:", str(e))
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# Route to fetch latest event for frontend
+# ✅ Fetch latest event for frontend
 @app.route('/events', methods=['GET'])
 def get_latest_event():
     try:
         event = collection.find().sort('_id', -1).limit(1)
-        docs = [doc for doc in event]
-        print("📤 Sending event to UI:", docs)
-        return jsonify(docs)
+        return jsonify([doc for doc in event])
     except Exception as e:
-        print("❌ Error in /events:", str(e))
         return jsonify({"error": str(e)}), 500
 
-# Serve index.html
+# ✅ Serve frontend
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# Run the Flask server
+# ✅ Run the Flask server
 if __name__ == '__main__':
     app.run(debug=True)
 
