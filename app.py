@@ -24,6 +24,7 @@ def webhook():
         event_type = request.headers.get('X-GitHub-Event','unknown')
         print("📥 Event Type:", event_type)
         print("📦 Raw Payload:", data)
+        parsed_event = {}
 
         # Handle push event
         if event_type == 'push':
