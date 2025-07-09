@@ -1,30 +1,26 @@
 from flask import Flask, request, jsonify, render_template
 from pymongo import MongoClient
 from datetime import datetime, timezone
+import os
 
 app = Flask(__name__)
 
-# MongoDB Connection
+# MongoDB connection
 client = MongoClient("mongodb+srv://dbuser:Bharu%40446@cluster0.gt4fbl2.mongodb.net/?retryWrites=true&w=majority")
 db = client["webhooks"]
 collection = db["events"]
 
-# Function to format UTC timestamp
+# Format current UTC timestamp
 def format_timestamp():
     return datetime.now(timezone.utc).strftime("%d %B %Y - %I:%M %p UTC")
 
-# Home route to render UI
-@app.route('/')
-def home():
-    return render_template('index.html')
-
-# Route to handle GitHub Webhooks
+# Webhook endpoint
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.json
         event_type = request.headers.get('X-GitHub-Event')
-        print(f"\n📥 Event Type: {event_type}")
+        print(f"📥 Event Type: {event_type}")
         print("📦 Raw Payload:", data)
 
         parsed_event = {}
@@ -41,46 +37,32 @@ def webhook():
                 }
 
         elif event_type == 'pull_request':
-            action = data.get('action')
             pr = data.get('pull_request', {})
-            user = pr.get('user', {})
-            base = pr.get('base', {})
-            head = pr.get('head', {})
-            if action == 'opened' and user and base and head:
+            action = data.get('action', '')
+            if pr:
                 parsed_event = {
                     "type": "pull_request",
-                    "author": user.get('login'),
-                    "from_branch": head.get('ref'),
-                    "to_branch": base.get('ref'),
+                    "author": pr.get('user', {}).get('login'),
+                    "action": action,
+                    "title": pr.get('title'),
                     "timestamp": format_timestamp()
                 }
 
-        elif event_type == 'pull_request' and data.get('action') == 'closed':
-            if data.get('pull_request', {}).get('merged'):
-                user = data['pull_request']['user']['login']
-                from_branch = data['pull_request']['head']['ref']
-                to_branch = data['pull_request']['base']['ref']
-                parsed_event = {
-                    "type": "merge",
-                    "author": user,
-                    "from_branch": from_branch,
-                    "to_branch": to_branch,
-                    "timestamp": format_timestamp()
-                }
+        # You can add more event types here if needed
 
         if parsed_event:
-            print("✅ Inserting into MongoDB:", parsed_event)
             collection.insert_one(parsed_event)
+            print("✅ Successfully inserted event to MongoDB.")
             return '', 204
         else:
-            print("⚠️ No relevant data to store.")
+            print("⚠️ No valid event data found.")
             return '', 204
 
     except Exception as e:
         print(f"❌ Error processing webhook: {e}")
         return jsonify({"error": str(e)}), 500
 
-# Route to get latest event for UI polling
+# Route to return latest event
 @app.route('/events', methods=['GET'])
 def get_latest_event():
     try:
@@ -89,7 +71,11 @@ def get_latest_event():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(debug=True)
+# Route to render UI
+@app.route('/')
+def index():
+    return render_template('index.html')
 
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
 
