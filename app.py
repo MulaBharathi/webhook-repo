@@ -1,34 +1,32 @@
 from flask import Flask, request, jsonify, render_template
 from pymongo import MongoClient
-from datetime import datetime
-import pytz
+from datetime import datetime, timezone
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
-# ✅ MongoDB Atlas connection (with password properly encoded)
+# MongoDB Connection (update with your credentials)
 client = MongoClient("mongodb+srv://dbuser:Bharu%40446@cluster0.gt4fbl2.mongodb.net/?retryWrites=true&w=majority")
 db = client["webhooks"]
 collection = db["events"]
 
-# ✅ Utility: UTC timestamp with formatting
+# Helper function for formatted timestamp
 def format_timestamp():
-    india_tz = pytz.timezone("Asia/Kolkata")
-    now = datetime.now(india_tz)
-    return now.strftime("%d %B %Y - %I:%M %p IST")
+    now = datetime.now(timezone.utc)
+    return now.strftime("%d %B %Y - %I:%M %p UTC")
 
-# ✅ Home route
 @app.route('/')
-def home():
-    return render_template('index.html')
+def index():
+    return render_template("index.html")
 
-# ✅ Webhook endpoint
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.json
         event_type = request.headers.get('X-GitHub-Event')
-        print(f"📥 Event Type: {event_type}")
-        print("📦 Raw Payload:", data)
+        print(f"\U0001F4E5 Event Type: {event_type}")
+        print(f"\U0001F4E6 Full Payload: {data}")
 
         parsed_event = {}
 
@@ -44,9 +42,8 @@ def webhook():
                 }
 
         elif event_type == 'pull_request':
-            action = data.get('action')
             pr = data.get('pull_request', {})
-            if action in ['opened', 'reopened'] and pr:
+            if pr:
                 parsed_event = {
                     "type": "pull_request",
                     "author": pr.get('user', {}).get('login'),
@@ -56,35 +53,28 @@ def webhook():
                 }
 
         elif event_type == 'merge':
-            # Optional: You can remove this if you're not manually handling merge events
-            parsed_event = {
-                "type": "merge",
-                "author": data.get('sender', {}).get('login'),
-                "from_branch": data.get('from'),
-                "to_branch": data.get('to'),
-                "timestamp": format_timestamp()
-            }
+            # Optional: Only if merge events are set up
+            pass
 
-        # ✅ Log & Insert
         if parsed_event:
-            print("✅ Parsed Event:", parsed_event)
+            print(f"✅ Parsed Event: {parsed_event}")
             collection.insert_one(parsed_event)
-            print("✅ INSERT SUCCESS")
+            print("🗃️ Saved to MongoDB")
+            return '', 204
         else:
-            print("⚠️ No data parsed for this event")
-
-        return '', 204
+            print("⚠️ Event ignored or missing required fields")
+            return '', 204
 
     except Exception as e:
         print(f"❌ Error processing webhook: {e}")
         return jsonify({"error": str(e)}), 500
 
-# ✅ API to fetch latest event
-@app.route('/events', methods=['GET'])
+@app.route('/events')
 def get_latest_event():
     try:
-        event = collection.find().sort('_id', -1).limit(1)
-        return jsonify([doc for doc in event])
+        latest = collection.find().sort("_id", -1).limit(1)
+        event = next(latest, None)
+        return jsonify(event if event else {})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
