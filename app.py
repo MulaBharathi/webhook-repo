@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime
 from db import collection  # assuming you have db.py with MongoDB connection
+from bson.json_util import dumps  # for safe MongoDB ObjectId serialization
 
 app = Flask(__name__)
 
@@ -64,10 +65,10 @@ def webhook():
         if parsed_event:
             collection.insert_one(parsed_event)
             print("✅ Saved to DB:", parsed_event)
-            return '', 204
+            return jsonify({"message": "Event saved"}), 200
         else:
             print("⚠️ No valid event to save.")
-            return '', 204
+            return jsonify({"message": "No event saved"}), 400
 
     except Exception as e:
         print("❌ Error while processing:", e)
@@ -76,8 +77,8 @@ def webhook():
 @app.route('/events', methods=['GET'])
 def get_latest_event():
     try:
-        event = collection.find().sort('_id', -1).limit(1)
-        return jsonify([e for e in event])
+        events = list(collection.find().sort('_id', -1).limit(10))
+        return dumps(events), 200, {'Content-Type': 'application/json'}
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
